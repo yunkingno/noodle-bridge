@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>누들브릿지 하중 계산기</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>누들브릿지 <span>하중 계산기</span></h1>
+      <p class="subtitle">2D 단면 · 중력 방향(아래) 하중만 계산합니다</p>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="panel">
+      <h2>도구</h2>
+      <div class="tool-group">
+        <div class="tool-buttons">
+          <button class="tool-btn active" data-mode="node"><span class="icon">●</span>노드 추가</button>
+          <button class="tool-btn" data-mode="member"><span class="icon">━</span>막대 연결</button>
+          <button class="tool-btn" data-mode="load"><span class="icon">↓</span>하중 설정</button>
+          <button class="tool-btn" data-mode="select"><span class="icon">◎</span>선택</button>
+          <button class="tool-btn" data-mode="delete"><span class="icon">✕</span>삭제</button>
+        </div>
+      </div>
+
+      <p style="font-size:0.75rem;color:var(--muted);margin-top:0.25rem;">
+        <strong>60×30cm</strong> 박스 안에 설계합니다. 책상 사이 <strong>파란 영역</strong> 아래쪽에도 하중 지지용 노드를 찍을 수 있습니다.
+      </p>
+
+      <div class="divider"></div>
+      <div id="error-box" class="error-msg" style="display:none;"></div>
+      <button class="btn-primary" id="btn-analyze">⚡ 하중 계산</button>
+      <button class="btn-secondary" id="btn-example">예제 다리 불러오기</button>
+      <button class="btn-secondary" id="btn-clear">전체 초기화</button>
+
+      <div class="divider"></div>
+      <h2 class="panel-subtitle">저장된 다리</h2>
+      <button class="btn-secondary" id="btn-save">💾 현재 다리 저장</button>
+      <div id="saved-list" class="saved-list">
+        <p class="saved-empty">저장된 다리가 없습니다.</p>
+      </div>
+    </aside>
+
+    <main class="canvas-wrap">
+      <div class="canvas-toolbar">
+        <span>높이 한계: <strong id="bound-label">30 cm</strong></span>
+        <span>가로 참고: <strong>60 cm</strong></span>
+        <span>책상 간격: <strong id="desk-gap-label">40 cm</strong></span>
+        <span>Space+드래그 이동 · 휠 확대/축소</span>
+        <span>노드: <strong id="count-nodes">0</strong></span>
+        <span>막대: <strong id="count-members">0</strong></span>
+        <span>하중: <strong id="count-loads">0</strong></span>
+      </div>
+      <canvas id="canvas"></canvas>
+      <div class="member-length-box" id="member-length-box">
+        <span class="member-length-label">막대 총 길이</span>
+        <strong id="total-member-length">0.0 cm</strong>
+      </div>
+      <div class="status-bar" id="status-bar">위치: 0, 0 cm</div>
+      <p class="hint" id="hint-text">캔버스를 클릭해 노드(절점)를 추가합니다.</p>
+    </main>
+
+    <aside class="panel panel-right">
+      <h2>계산 결과</h2>
+      <div id="results-panel" class="results">
+        <p class="results-empty">하중 계산을 실행하면 각 막대의 축력이 표시됩니다.</p>
+      </div>
+    </aside>
+  </div>
+
+  <div class="modal-overlay" id="save-modal">
+    <div class="modal">
+      <h3>다리 저장</h3>
+      <p style="font-size:0.82rem;color:var(--muted);margin-bottom:1rem;">
+        노드·막대·하중 구성을 이 브라우저에 저장합니다. 나중에 불러와 이어서 편집할 수 있습니다.
+      </p>
+      <div class="field">
+        <label>저장 이름</label>
+        <input type="text" id="save-name" maxlength="40" placeholder="예: 1차 설계안" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="save-cancel">취소</button>
+        <button class="btn-primary" id="save-apply">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="load-modal">
+    <div class="modal">
+      <h3>하중 입력 (중력)</h3>
+      <p style="font-size:0.82rem;color:var(--muted);margin-bottom:1rem;">
+        이 노드에 걸리는 무게입니다. 항상 <strong>아래 방향(↓)</strong> 으로만 적용됩니다.
+      </p>
+      <div class="field">
+        <label>하중 크기 (N)</label>
+        <input type="number" id="load-weight" value="10" min="0" step="1" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="load-cancel">취소</button>
+        <button class="btn-primary" id="load-apply">적용</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
