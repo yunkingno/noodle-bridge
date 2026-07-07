@@ -226,6 +226,22 @@ function findNodeAt(px, py) {
   return null;
 }
 
+function getMemberHit(px, py) {
+  let best = null;
+  for (const m of state.members) {
+    const na = state.nodes.find((n) => n.id === m.nodeA);
+    const nb = state.nodes.find((n) => n.id === m.nodeB);
+    if (!na || !nb) continue;
+    const sa = unitsToScreen(na.x, na.y);
+    const sb = unitsToScreen(nb.x, nb.y);
+    const hit = pointToSegmentHit(px, py, sa.x, sa.y, sb.x, sb.y);
+    if (hit.dist < 10 && (!best || hit.dist < best.dist)) {
+      best = { member: m, alpha: hit.t, dist: hit.dist };
+    }
+  }
+  return best;
+}
+
 function resizeCanvas() {
   const wrap = canvas.parentElement;
   canvas.width = wrap.clientWidth;
@@ -509,33 +525,37 @@ function drawSupport(node, type) {
   }
 }
 
-function drawLoad(node, weight) {
+function drawLoadAt(x, y, weight) {
   if (weight < 1e-6) return;
-  const s = unitsToScreen(node.x, node.y);
   const len = Math.min(50, 18 + weight * 0.35);
 
   ctx.strokeStyle = '#d97706';
   ctx.fillStyle = '#d97706';
   ctx.lineWidth = 2.5;
 
-  const x0 = s.x;
-  const y0 = s.y - len;
+  const x0 = x;
+  const y0 = y - len;
 
   ctx.beginPath();
   ctx.moveTo(x0, y0);
-  ctx.lineTo(s.x, s.y);
+  ctx.lineTo(x, y);
   ctx.stroke();
 
   const head = 8;
   ctx.beginPath();
-  ctx.moveTo(s.x, s.y);
-  ctx.lineTo(s.x - head * 0.45, s.y - head);
-  ctx.lineTo(s.x + head * 0.45, s.y - head);
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - head * 0.45, y - head);
+  ctx.lineTo(x + head * 0.45, y - head);
   ctx.closePath();
   ctx.fill();
 
   ctx.font = '11px sans-serif';
   ctx.fillText(`${weight.toFixed(1)}N ↓`, x0 + 8, y0 - 4);
+}
+
+function drawLoad(node, weight) {
+  const s = unitsToScreen(node.x, node.y);
+  drawLoadAt(s.x, s.y, weight);
 }
 
 function getMemberColor(memberId) {
@@ -666,8 +686,21 @@ function draw() {
   }
 
   for (const load of state.loads) {
-    const node = state.nodes.find((n) => n.id === load.nodeId);
-    if (node) drawLoad(node, load.weight);
+    if (load.nodeId !== undefined) {
+      const node = state.nodes.find((n) => n.id === load.nodeId);
+      if (node) drawLoad(node, load.weight);
+    } else if (load.memberId !== undefined) {
+      const member = state.members.find((m) => m.id === load.memberId);
+      if (!member) continue;
+      const na = state.nodes.find((n) => n.id === member.nodeA);
+      const nb = state.nodes.find((n) => n.id === member.nodeB);
+      if (!na || !nb) continue;
+      const alpha = load.alpha ?? 0.5;
+      const x = na.x * (1 - alpha) + nb.x * alpha;
+      const y = na.y * (1 - alpha) + nb.y * alpha;
+      const s = unitsToScreen(x, y);
+      drawLoadAt(s.x, s.y, load.weight);
+    }
   }
 
   for (const n of state.nodes) {
@@ -703,7 +736,7 @@ function updateHint() {
   const hints = {
     node: '60×30cm 박스 안에 설계하세요. 책상 사이(파란 영역) 아래쪽에도 지지 노드를 찍을 수 있습니다.',
     member: '시작 노드를 클릭한 뒤, 연결할 끝 노드를 클릭해 막대(부재)를 만듭니다.',
-    load: '하중을 받을 노드를 클릭해 무게(N)를 입력합니다. 항상 아래 방향입니다.',
+    load: '하중을 받을 노드 또는 막대를 클릭해 무게(N)를 입력합니다. 막대 하중은 양 끝 노드로 나누어 계산됩니다.',
     delete: '노드·부재를 클릭해 삭제합니다.',
     select: '노드를 클릭해 선택합니다. Delete 키로 삭제.',
   };
@@ -739,24 +772,54 @@ function addMember(nodeA, nodeB) {
   updateCounts();
 }
 
-function openLoadModal(node) {
-  const existing = state.loads.find((l) => l.nodeId === node.id);
-  document.getElementById('load-weight').value = existing?.weight ?? 10;
-  loadModal.dataset.nodeId = node.id;
+function openLoadModal(target, type, alpha = 0.5) {
+  loadModal.dataset.type = type;
+  delete loadModal.dataset.nodeId;
+  delete loadModal.dataset.memberId;
+
+  if (type === 'node') {
+    const existing = state.loads.find((l) => l.nodeId === target.id);
+    document.getElementById('load-modal-title').textContent = '노드 하중 입력';
+    document.getElementById('load-alpha-field').style.display = 'none';
+    document.getElementById('load-weight').value = existing?.weight ?? 10;
+    loadModal.dataset.nodeId = target.id;
+  } else {
+    const existing = state.loads.find((l) => l.memberId === target.id);
+    document.getElementById('load-modal-title').textContent = '부재 위 하중 입력';
+    document.getElementById('load-alpha-field').style.display = 'block';
+    document.getElementById('load-weight').value = existing?.weight ?? 10;
+    document.getElementById('load-alpha').value = existing?.alpha ?? alpha;
+    loadModal.dataset.memberId = target.id;
+  }
+
   loadModal.classList.add('open');
 }
 
 function applyLoad() {
-  const nodeId = Number(loadModal.dataset.nodeId);
+  const type = loadModal.dataset.type;
   const weight = Math.max(0, parseFloat(document.getElementById('load-weight').value) || 0);
 
-  const idx = state.loads.findIndex((l) => l.nodeId === nodeId);
-  if (weight < 1e-9) {
-    if (idx >= 0) state.loads.splice(idx, 1);
-  } else if (idx >= 0) {
-    state.loads[idx] = { nodeId, weight };
-  } else {
-    state.loads.push({ nodeId, weight });
+  if (type === 'node') {
+    const nodeId = Number(loadModal.dataset.nodeId);
+    const idx = state.loads.findIndex((l) => l.nodeId === nodeId);
+    if (weight < 1e-9) {
+      if (idx >= 0) state.loads.splice(idx, 1);
+    } else if (idx >= 0) {
+      state.loads[idx] = { nodeId, weight };
+    } else {
+      state.loads.push({ nodeId, weight });
+    }
+  } else if (type === 'member') {
+    const memberId = Number(loadModal.dataset.memberId);
+    const alpha = Math.max(0, Math.min(1, parseFloat(document.getElementById('load-alpha').value) || 0.5));
+    const idx = state.loads.findIndex((l) => l.memberId === memberId);
+    if (weight < 1e-9) {
+      if (idx >= 0) state.loads.splice(idx, 1);
+    } else if (idx >= 0) {
+      state.loads[idx] = { memberId, weight, alpha };
+    } else {
+      state.loads.push({ memberId, weight, alpha });
+    }
   }
 
   loadModal.classList.remove('open');
@@ -771,7 +834,14 @@ function deleteAt(px, py) {
     state.nodes = state.nodes.filter((n) => n.id !== node.id);
     state.members = state.members.filter((m) => m.nodeA !== node.id && m.nodeB !== node.id);
     state.supports = state.supports.filter((s) => s.nodeId !== node.id);
-    state.loads = state.loads.filter((l) => l.nodeId !== node.id);
+    state.loads = state.loads.filter((l) => {
+      if (l.nodeId === node.id) return false;
+      if (l.memberId !== undefined) {
+        const member = state.members.find((m) => m.id === l.memberId);
+        return Boolean(member);
+      }
+      return true;
+    });
     state.results = null;
     draw();
     updateCounts();
@@ -787,6 +857,7 @@ function deleteAt(px, py) {
     const dist = pointToSegmentDist(px, py, sa.x, sa.y, sb.x, sb.y);
     if (dist < 8) {
       state.members = state.members.filter((x) => x.id !== m.id);
+      state.loads = state.loads.filter((l) => l.memberId !== m.id);
       state.results = null;
       draw();
       updateCounts();
@@ -796,13 +867,17 @@ function deleteAt(px, py) {
 }
 
 function pointToSegmentDist(px, py, x1, y1, x2, y2) {
+  return pointToSegmentHit(px, py, x1, y1, x2, y2).dist;
+}
+
+function pointToSegmentHit(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const len2 = dx * dx + dy * dy;
-  if (len2 === 0) return Math.hypot(px - x1, py - y1);
+  if (len2 === 0) return { dist: Math.hypot(px - x1, py - y1), t: 0 };
   let t = ((px - x1) * dx + (py - y1) * dy) / len2;
   t = Math.max(0, Math.min(1, t));
-  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+  return { dist: Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy)), t };
 }
 
 function runAnalysis() {
@@ -834,11 +909,19 @@ function runAnalysis() {
 
   state.supports = supportResult.supports;
 
-  const loadsForAnalysis = state.loads.map((l) => ({
-    nodeId: l.nodeId,
-    fx: 0,
-    fy: -l.weight,
-  }));
+  const loadsForAnalysis = [];
+  for (const load of state.loads) {
+    if (load.nodeId !== undefined) {
+      loadsForAnalysis.push({ nodeId: load.nodeId, fx: 0, fy: -load.weight });
+    } else if (load.memberId !== undefined) {
+      const member = state.members.find((m) => m.id === load.memberId);
+      if (!member) continue;
+      const alpha = load.alpha ?? 0.5;
+      const beta = 1 - alpha;
+      loadsForAnalysis.push({ nodeId: member.nodeA, fx: 0, fy: -load.weight * beta });
+      loadsForAnalysis.push({ nodeId: member.nodeB, fx: 0, fy: -load.weight * alpha });
+    }
+  }
 
   const analyzer = new TrussAnalyzer(
     state.nodes,
@@ -939,7 +1022,10 @@ function serializeBridgeState() {
   return {
     nodes: state.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y })),
     members: state.members.map((m) => ({ id: m.id, nodeA: m.nodeA, nodeB: m.nodeB })),
-    loads: state.loads.map((l) => ({ nodeId: l.nodeId, weight: l.weight })),
+    loads: state.loads.map((l) => {
+      if (l.nodeId !== undefined) return { nodeId: l.nodeId, weight: l.weight };
+      return { memberId: l.memberId, weight: l.weight, alpha: l.alpha ?? 0.5 };
+    }),
     nextId: state.nextId,
   };
 }
@@ -1192,8 +1278,12 @@ canvas.addEventListener('click', (e) => {
   }
 
   if (state.mode === 'load') {
-    if (!node) return;
-    openLoadModal(node);
+    if (node) {
+      openLoadModal(node, 'node');
+      return;
+    }
+    const hit = getMemberHit(px, py);
+    if (hit) openLoadModal(hit.member, 'member', hit.alpha);
     return;
   }
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>누들브릿지 하중 계산기</title>
+  <title>누들 브리지 하중 계산기</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" />
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet" />
@@ -11,8 +11,8 @@
 <body>
   <header>
     <div>
-      <h1>누들브릿지 <span>하중 계산기</span></h1>
-      <p class="subtitle">2D 단면 · 중력 방향(아래) 하중만 계산합니다</p>
+      <h1>누들 브리지 <span>하중 계산기</span></h1>
+      <p class="subtitle">2D 트러스 모델에서 아래 방향 하중에 따른 막대별 인장/압축력을 계산합니다.</p>
     </div>
   </header>
 
@@ -22,37 +22,38 @@
       <div class="tool-group">
         <div class="tool-buttons">
           <button class="tool-btn active" data-mode="node"><span class="icon">●</span>노드 추가</button>
-          <button class="tool-btn" data-mode="member"><span class="icon">━</span>막대 연결</button>
+          <button class="tool-btn" data-mode="member"><span class="icon">╱</span>막대 연결</button>
           <button class="tool-btn" data-mode="load"><span class="icon">↓</span>하중 설정</button>
-          <button class="tool-btn" data-mode="select"><span class="icon">◎</span>선택</button>
-          <button class="tool-btn" data-mode="delete"><span class="icon">✕</span>삭제</button>
+          <button class="tool-btn" data-mode="select"><span class="icon">↖</span>선택</button>
+          <button class="tool-btn" data-mode="delete"><span class="icon">×</span>삭제</button>
         </div>
       </div>
 
       <p style="font-size:0.75rem;color:var(--muted);margin-top:0.25rem;">
-        <strong>60×30cm</strong> 박스 안에 설계합니다. 책상 사이 <strong>파란 영역</strong> 아래쪽에도 하중 지지용 노드를 찍을 수 있습니다.
+        <strong>60×30cm</strong> 설계 영역 안에 브리지를 만듭니다.
+        책상 사이 <strong>40cm 빈 구간</strong>의 아래쪽에도 하중 지지용 노드를 배치할 수 있습니다.
       </p>
 
       <div class="divider"></div>
       <div id="error-box" class="error-msg" style="display:none;"></div>
-      <button class="btn-primary" id="btn-analyze">⚡ 하중 계산</button>
-      <button class="btn-secondary" id="btn-example">예제 다리 불러오기</button>
+      <button class="btn-primary" id="btn-analyze">하중 계산</button>
+      <button class="btn-secondary" id="btn-example">예제 브리지 불러오기</button>
       <button class="btn-secondary" id="btn-clear">전체 초기화</button>
 
       <div class="divider"></div>
-      <h2 class="panel-subtitle">저장된 다리</h2>
-      <button class="btn-secondary" id="btn-save">💾 현재 다리 저장</button>
+      <h2 class="panel-subtitle">저장된 브리지</h2>
+      <button class="btn-secondary" id="btn-save">현재 브리지 저장</button>
       <div id="saved-list" class="saved-list">
-        <p class="saved-empty">저장된 다리가 없습니다.</p>
+        <p class="saved-empty">저장된 브리지가 없습니다.</p>
       </div>
     </aside>
 
     <main class="canvas-wrap">
       <div class="canvas-toolbar">
-        <span>높이 한계: <strong id="bound-label">30 cm</strong></span>
+        <span>높이 제한: <strong id="bound-label">30 cm</strong></span>
         <span>가로 참고: <strong>60 cm</strong></span>
         <span>책상 간격: <strong id="desk-gap-label">40 cm</strong></span>
-        <span>Space+드래그 이동 · 휠 확대/축소</span>
+        <span>Space+드래그 이동 · 휠 확대/축소 · Ctrl+0 맞춤</span>
         <span>노드: <strong id="count-nodes">0</strong></span>
         <span>막대: <strong id="count-members">0</strong></span>
         <span>하중: <strong id="count-loads">0</strong></span>
@@ -76,9 +77,9 @@
 
   <div class="modal-overlay" id="save-modal">
     <div class="modal">
-      <h3>다리 저장</h3>
+      <h3>브리지 저장</h3>
       <p style="font-size:0.82rem;color:var(--muted);margin-bottom:1rem;">
-        노드·막대·하중 구성을 이 브라우저에 저장합니다. 나중에 불러와 이어서 편집할 수 있습니다.
+        노드, 막대, 하중 구성을 브라우저에 저장합니다. 나중에 불러와 이어서 편집할 수 있습니다.
       </p>
       <div class="field">
         <label>저장 이름</label>
@@ -93,10 +94,14 @@
 
   <div class="modal-overlay" id="load-modal">
     <div class="modal">
-      <h3>하중 입력 (중력)</h3>
+      <h3 id="load-modal-title">하중 입력</h3>
       <p style="font-size:0.82rem;color:var(--muted);margin-bottom:1rem;">
-        이 노드에 걸리는 무게입니다. 항상 <strong>아래 방향(↓)</strong> 으로만 적용됩니다.
+        하중은 항상 <strong>아래 방향</strong>으로 적용됩니다. 무게를 0으로 입력하면 해당 하중이 삭제됩니다.
       </p>
+      <div class="field" id="load-alpha-field" style="display:none;">
+        <label>부재 위 하중 위치 (0~1, 기본 0.5=정중앙)</label>
+        <input type="number" id="load-alpha" value="0.5" step="0.1" min="0" max="1" />
+      </div>
       <div class="field">
         <label>하중 크기 (N)</label>
         <input type="number" id="load-weight" value="10" min="0" step="1" />
